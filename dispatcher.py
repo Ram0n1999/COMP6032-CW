@@ -47,7 +47,7 @@ class Dispatcher:
 
       #_________________________________________________________________________________________________________
       # methods to add objects to the Dispatcher's knowledge base
-      def DispatcherRevenue(self):
+      def DispatcherRev(self):
           return self._revenue
       
       # make a new taxi known.

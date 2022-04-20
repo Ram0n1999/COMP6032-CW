@@ -119,9 +119,9 @@ class Taxi:
           return self.number
       def TaxiAcc(self):
           return self._account
-      def TaxiOnD(self):
+      def TaxiOnDuty(self):
           return self._onDutyTime
-      def TaxiOffD(self):
+      def TaxiOffDuty(self):
           return self._offDutyTime
 
       # get a map if none was provided at the outset
@@ -378,6 +378,75 @@ class Taxi:
           Bid = CloseEnough and Worthwhile
           return Bid
 
+# PyschoTaxi behaves exactly like a regular taxi, except that 1) it is more patient before going 'off duty,
+# with a 2x minimum idle loss, and 2) it kills passengers rather than dropping them off. Note that because it inherits
+# from the taxi class, everything you do to improve your taxis also helps PsychoTaxi compete!
+class PsychoTaxi(Taxi):
 
+      # everything about a PsychoTaxi is the same except it can absorb a larger amount of loss.
+      def __init__(self, world, taxi_num, idle_loss=256, max_wait=50, on_duty_time=0, off_duty_time=0, service_area=None, start_point=None):
+      
+          super().__init__(world, taxi_num, idle_loss*2, max_wait, on_duty_time, off_duty_time, service_area, start_point)
 
-
+      # clockTick should handle all the non-driving behaviour, turn selection, stopping, etc. Drive automatically
+      # stops once it reaches its next location so that if continuing on is desired, clockTick has to select
+      # that action explicitly. This can be done using the turn and continueThrough methods of the node. Taxis
+      # can collect fares using pickupFare, drop them off using dropoffFare, bid for fares issued by the Dispatcher
+      # using transmitFareBid, and any other internal activity seen as potentially useful. 
+      def clockTick(self, world):
+          # automatically go off duty if we have absorbed as much loss as we can in a day
+          if self._account <= 0 and self._passenger is None:
+             print("Taxi {0} is going off-duty".format(self.number))
+             self.onDuty = False
+             self._offDutyTime = self._world.simTime
+          # have we reached our last known destination? Decide what to do now.
+          if len(self._path) == 0:
+             # PsychoTaxi simply kills the passenger!
+             if self._passenger is not None:
+                self._passenger.clear()           
+                self._passenger = None 
+             # decide what to do about available fares. This can be done whenever, but should be done
+             # after we have dropped off fares so that they don't complicate decisions.
+             faresToRemove = [] 
+             for fare in self._availableFares.items():
+                 # remember that availableFares is a dict indexed by (time, originx, originy). A location,
+                 # meanwhile, is an (x, y) tuple. So fare[0][0] is the time the fare called, fare[0][1]
+                 # is the fare's originx, and fare[0][2] is the fare's originy, which we can use to
+                 # build the location tuple.
+                 origin = (fare[0][1], fare[0][2])
+                 # much more intelligent things could be done here. This simply naively takes the first
+                 # allocated fare we have and plans a basic path to get us from where we are to where
+                 # they are waiting. 
+                 if fare[1].allocated and self._passenger is None:
+                    # at the collection point for our next passenger?
+                    if self._loc.index[0] == origin[0] and self._loc.index[1] == origin[1]:
+                       self._passenger = self._loc.pickupFare(self._direction)
+                       # if a fare was collected, we can start to drive to their destination. If they
+                       # were not collected, that probably means the fare abandoned.
+                       if self._passenger is not None:
+                          self._path = self._planPath(self._loc.index, self._passenger.destination)
+                       faresToRemove.append(fare[0])
+                    # not at collection point, so determine how to get there
+                    elif len(self._path) == 0:
+                       self._path = self._planPath(self._loc.index, origin)
+                 # get rid of any unallocated fares that are too stale to be likely customers
+                 elif self._world.simTime-fare[0][0] > self._maxFareWait:
+                      faresToRemove.append(fare[0])
+                 # may want to bid on available fares. This could be done at any point here, it
+                 # doesn't need to be a particularly early or late decision amongst the things to do.
+                 elif fare[1].bid == 0:
+                    if self._bidOnFare(fare[0][0],origin,fare[1].destination,fare[1].price):
+                       self._world.transmitFareBid(origin, self)
+                       fare[1].bid = 1
+                    else:
+                       fare[1].bid = -1
+             for expired in faresToRemove:
+                 del self._availableFares[expired]
+          # may want to do something active whilst enroute - this simple default version does
+          # nothing, but that is probably not particularly 'intelligent' behaviour.
+          else:
+             pass
+          # the last thing to do is decrement the account - the fixed 'time penalty'. This is always done at
+          # the end so that the last possible time tick isn't wasted e.g. if that was just enough time to
+          # drop off a fare.          
+          self._account -= 1

@@ -1,6 +1,7 @@
 import math
 import numpy
 import heapq
+import inspect
 
 from taxi import Taxi
 
@@ -94,33 +95,41 @@ class Fare:
           self._destination = None
           self._taxi = None
 
+      # once a fare has accepted a bid, assign it to the winning bidder taxi    
       def assignTaxi(self, taxi):
           self._taxi = taxi
 
+      # fare has boarded and is on their way to destination    
       @property
       def enroute(self):
           return self._enroute
 
+      # where the fare wants to be collected from
       @property
       def origin(self):
           return self._origin.index
 
+      # where the fare wants to go to
       @property
       def destination(self):
-          return self._destination.index
+            return self._destination.index
 
+      # when the fare made the initial request for a taxi
       @property
       def calltime(self):
           return self._callTime
 
+      # longest amount of time fare will wait before abandoning call
       @property
       def maxWait(self):
           return self._waitTime
 
+      # agreed price for the trip
       @property
       def price(self):
           return self._price
 
+      # taxi to which this fare has been assigned
       @property
       def taxi(self):
           return self._taxi
@@ -247,7 +256,7 @@ class Node:
              # flow through traffic first, to give the node the best chance of allowing taxis in
              for neighbour in self._neighbours:
                  if neighbour is not None and neighbour.haveSpace and self._traffic > 0:
-                    parent.addTraffic(neighbour)
+                    self._parent.addTraffic(neighbour)
                     self._traffic -= 1
                     self.injectTraffic(self._parent,self._trafficSink)
              # off-duty taxis which were here should be removed. Build a new list so
@@ -266,17 +275,17 @@ class Node:
                             self._traffic_light = (self._traffic_light+1) % 8
                       admitted[self._traffic_light] = self._incoming[self._traffic_light]
                       remaining -= 1
-                parent.issueAdmission(self, admitted)
+                self._parent.issueAdmission(self, admitted)
              # next deal with new fares appearing or abandoning
              if self._fare is not None:
                 # fares won't wait forever for a ride
-                if parent.simTime-self._fare.calltime > self._fare.maxWait:
-                   parent.removeFare(self._fare)
+                if self._parent.simTime-self._fare.calltime > self._fare.maxWait:
+                   self._parent.removeFare(self._fare)
                    self._fare = None
              # and will only hail a taxi in allowed stopping locations
              elif self._canStop:
                 if self._fare_generator(self._parent.simTime):
-                   self._fare = parent.insertFare(self)
+                   self._fare = self._parent.insertFare(self)
              # last thing to do is inject intrinsic traffic
              self.injectTraffic(self._parent,self._trafficSrc)
 
